@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Paper Queue</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow working column. "Up next" band, then two views of the same
+   papers: by priority (three shelves) and plan order (a numbered sequence by week). */
+:root{
+  --bg:#f2f5f4; --surface:#ffffff; --ink:#17242b; --muted:#5a6a71; --line:#d5dddb;
+  --accent:#0f6e6a; --accent-soft:#dcefed;
+  --hl:#87377a; --hl-soft:#f3e3f0;
+  --reading:#9a5b00; --reading-soft:#fbeed3;
+  --done:#2c774a; --done-soft:#dff1e5;
+  --danger:#a8322b;
+  --display:"Space Grotesk","Inter",system-ui,sans-serif;
+  --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1719; --surface:#162125; --ink:#e3ebe9; --muted:#93a3a8; --line:#2a383d;
+    --accent:#5cc9c1; --accent-soft:#16393a;
+    --hl:#dba2d6; --hl-soft:#3a2238;
+    --reading:#e3ad52; --reading-soft:#3a2c12;
+    --done:#72c692; --done-soft:#173324;
+    --danger:#ef8a82; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1719; --surface:#162125; --ink:#e3ebe9; --muted:#93a3a8; --line:#2a383d;
+  --accent:#5cc9c1; --accent-soft:#16393a;
+  --hl:#dba2d6; --hl-soft:#3a2238;
+  --reading:#e3ad52; --reading-soft:#3a2c12;
+  --done:#72c692; --done-soft:#173324;
+  --danger:#ef8a82; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:900px;margin:0 auto;padding-block:28px 64px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:22px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-0.01em}
+h1{font-size:30px;font-weight:700}
+h2{font-size:19px;font-weight:600}
+h3{font-size:15px;font-weight:600}
+p{margin:0}
+a{color:var(--accent)}
+button,select,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.label{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 16px}
+header .tally{color:var(--muted);font-size:14px}
+
+.next{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.next > div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0;
+  display:flex;flex-direction:column;gap:4px}
+.next a{font-family:var(--display);font-weight:600;font-size:16px;color:var(--ink);text-decoration:none}
+.next a:hover{color:var(--accent);text-decoration:underline}
+.next .sub{color:var(--muted);font-size:13px}
+
+.quick{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:12px}
+.quick input,.quick select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);min-width:0}
+.quick input{flex:3 1 240px}
+.quick select{flex:1 1 150px}
+.quick #qa-msg{flex:1 1 100%;font-size:13px;color:var(--muted)}
+.quick #qa-msg:empty{display:none}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.tabs{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.tabs a{padding:7px 14px;text-decoration:none;color:var(--muted);font-weight:500;font-size:14px}
+.tabs a[aria-current="page"]{background:var(--accent);color:var(--surface)}
+.bar input[type=search]{flex:1 1 180px;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.bar label.chk{display:flex;gap:6px;align-items:center;font-size:14px;color:var(--muted)}
+
+section.shelf{display:flex;flex-direction:column;gap:10px}
+.shead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;border-bottom:2px solid var(--ink);padding-bottom:6px}
+.shead .desc{color:var(--muted);font-size:13px;flex:1 1 200px;min-width:0}
+.shead .count{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.wkhead{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin-top:8px}
+.wkhead .label{color:var(--accent)}
+ol.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px 12px;padding:12px 0;border-bottom:1px solid var(--line);align-items:start}
+.row.has-num{grid-template-columns:28px auto minmax(0,1fr) auto}
+.num{font-family:var(--mono);font-size:12px;color:var(--muted);padding-top:6px;text-align:right;font-variant-numeric:tabular-nums}
+.st{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;
+  padding:4px 10px 4px 8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;min-width:88px}
+.st .dot{width:10px;height:10px;border-radius:50%;border:2px solid var(--muted);flex:none}
+.s1 .st{background:var(--reading-soft);border-color:var(--reading);color:var(--reading)}
+.s1 .st .dot{border-color:var(--reading);background:linear-gradient(90deg,var(--reading) 50%,transparent 50%)}
+.s2 .st{background:var(--done-soft);border-color:var(--done);color:var(--done)}
+.s2 .st .dot{border-color:var(--done);background:var(--done)}
+.main{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ttl{font-weight:600;color:var(--ink);text-decoration:none;overflow-wrap:anywhere}
+.ttl:hover{color:var(--accent);text-decoration:underline}
+.s2 .ttl{color:var(--muted);text-decoration:line-through}
+.meta{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.why{font-size:14px;max-width:65ch}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--accent-soft);color:var(--accent)}
+.tag.hl{background:var(--hl-soft);color:var(--hl)}
+.tag.plain{background:transparent;border:1px solid var(--line);color:var(--muted)}
+.note{font-size:13px;color:var(--muted);border-left:2px solid var(--line);padding-left:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.acts{display:flex;gap:4px}
+.ib{border:1px solid var(--line);background:var(--surface);border-radius:6px;min-width:30px;height:30px;padding:0 8px;cursor:pointer;font-size:13px;color:var(--muted)}
+.ib:hover{color:var(--ink);border-color:var(--muted)}
+.ib:disabled{opacity:.35;cursor:default}
+.edit{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:8px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field.wide{grid-column:1/-1}
+.field select,.field input,.field textarea{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);width:100%;min-width:0}
+textarea{resize:vertical;min-height:64px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:var(--surface);border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.danger{background:transparent;border-color:var(--danger);color:var(--danger)}
+.empty{color:var(--muted);font-size:14px;padding:12px 0}
+details.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+details.panel summary{cursor:pointer;font-family:var(--display);font-weight:600}
+details.panel form,details.panel .io{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:12px}
+.help{font-size:13px;color:var(--muted);grid-column:1/-1;max-width:70ch}
+.rowbtns{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#msg,#gh-msg{font-size:13px;color:var(--muted)}
+#sync-status.bad{color:var(--danger)}
+@media (max-width:560px){
+  .row,.row.has-num{grid-template-columns:auto minmax(0,1fr)}
+  .row.has-num{grid-template-columns:22px minmax(0,1fr)}
+  .row.has-num .st{grid-column:2}
+  .row.has-num .main{grid-column:2}
+  .acts{grid-column:1/-1;justify-content:flex-end}
+  .row:not(.has-num) .main{grid-column:1/-1}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Paper Queue</h1>
+    <div class="tally"><span id="tally"></span> · <span id="sync-status" role="status"></span></div>
+  </header>
+
+  <div class="next" id="next"></div>
+
+  <form class="quick" id="qa-form">
+    <input id="qa-link" required placeholder="Paste a paper link or arXiv ID" aria-label="Paper link or arXiv ID">
+    <select id="qa-sec" aria-label="Shelf"></select>
+    <select id="qa-wk" aria-label="Learning plan slot"></select>
+    <button class="btn" type="submit" id="qa-go">Add</button>
+    <span id="qa-msg" role="status"></span>
+  </form>
+
+  <div class="bar">
+    <nav class="tabs" aria-label="View">
+      <a href="#priority" id="tab-priority">By priority</a>
+      <a href="#plan" id="tab-plan">Plan order</a>
+    </nav>
+    <input type="search" id="q" placeholder="Filter by title, author, or note" aria-label="Filter papers">
+    <label class="chk"><input type="checkbox" id="hide-done"> Hide done</label>
+  </div>
+
+  <div id="view"></div>
+
+  <details class="panel" id="add-panel">
+    <summary>Add a paper</summary>
+    <form id="add-form">
+      <div class="field wide"><label class="label" for="f-title">Title</label><input id="f-title" required></div>
+      <div class="field"><label class="label" for="f-link">arXiv ID or link</label><input id="f-link" placeholder="2411.04983 or https://…"></div>
+      <div class="field"><label class="label" for="f-authors">Authors, venue</label><input id="f-authors" placeholder="Zhou et al., ICML 2025"></div>
+      <div class="field"><label class="label" for="f-sec">Shelf</label><select id="f-sec"></select></div>
+      <div class="field"><label class="label" for="f-src">Why it's here</label><select id="f-src"></select></div>
+      <div class="field"><label class="label" for="f-wk">Learning plan slot</label><select id="f-wk"></select></div>
+      <div class="field wide"><label class="label" for="f-why">One line on why</label><input id="f-why"></div>
+      <div class="rowbtns"><button class="btn" type="submit">Add paper</button></div>
+    </form>
+  </details>
+
+  <details class="panel">
+    <summary>Sync across devices</summary>
+    <form id="gh-form">
+      <p class="help">Keeps the queue in a private GitHub repo so every device shows the same thing. Create a fine-grained token at github.com/settings/personal-access-tokens with access to only your data repo and the "Contents: Read and write" permission, then paste it here once per browser. The token is stored in this browser only.</p>
+      <div class="field"><label class="label" for="gh-repo">Data repo</label><input id="gh-repo" placeholder="username/paper-queue-data" autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label class="label" for="gh-token">Token</label><input id="gh-token" type="password" placeholder="github_pat_…" autocomplete="off"></div>
+      <div class="rowbtns">
+        <button class="btn" type="submit" id="gh-go">Connect</button>
+        <button class="btn ghost" type="button" id="gh-off" hidden>Disconnect and clear this browser</button>
+        <span id="gh-msg" role="status"></span>
+      </div>
+    </form>
+  </details>
+
+  <details class="panel">
+    <summary>Back up or move your data</summary>
+    <div class="io">
+      <p class="help">A manual copy of your statuses, notes, order and added papers. Copy it to keep a backup, or paste a copy here to restore it.</p>
+      <div class="field wide"><label class="label" for="io-text">Data</label><textarea id="io-text" spellcheck="false"></textarea></div>
+      <div class="rowbtns">
+        <button class="btn ghost" type="button" id="io-copy">Copy my data</button>
+        <button class="btn ghost" type="button" id="io-load">Load pasted data</button>
+        <span id="msg" role="status"></span>
+      </div>
+    </div>
+  </details>
+</div>
+
+<script>
+/* ---------- Queue definition ----------
+   The page ships with an empty generic queue. Once sync is connected, the shelves, plan slots,
+   labels and built-in paper list come from queue.json in your private data repo:
+   { config:{weeks,shelves,src,hl,next}, seed:[papers], state:{...} }
+   paper: id, t (title), a (authors), ax (arXiv ID) or u (link), sec (shelf key), src, wk (plan slot), skim, why */
+const DEFAULT_DOC={config:{
+  weeks:[],
+  shelves:[
+    {k:'hi',n:'High priority',d:'Read these first',src:'direct'},
+    {k:'lo',n:'Lower priority',d:'Could turn out relevant',src:'maybe'},
+    {k:'gen',n:'Other',d:'Just want to read it',src:'cool'}
+  ],
+  src:{direct:'Directly relevant',maybe:'Could be relevant',cool:'Just cool',plan:'Learning plan'},
+  hl:[],
+  next:{label:'Next up',shelves:['hi','lo']}
+},seed:[]};
+let CFG,WEEKS,SHELVES,SRC,SEED;
+function applyDoc(d){
+  CFG=Object.assign({},DEFAULT_DOC.config,d&&d.config);
+  WEEKS=CFG.weeks||[]; SHELVES=CFG.shelves||[]; SRC=CFG.src||{};
+  SEED=((d&&d.seed)||[]).map((p,i)=>Object.assign({},p,{base:i}));
+}
+
+/* ---------- State: saved in this browser, and in the data repo when sync is connected ---------- */
+const KEY='paperqueue.v1';
+const $=id=>document.getElementById(id);
+const J=JSON.stringify;
+const EMPTY=()=>({st:{},notes:{},ov:{},o:{},po:{},rm:{},custom:[]});
+const MAPS=['st','notes','ov','o','po','rm'];
+function norm(d){
+  const s=Object.assign(EMPTY(),d&&typeof d==='object'&&!Array.isArray(d)?d:{});
+  for(const k of MAPS) if(!s[k]||typeof s[k]!=='object') s[k]={};
+  if(!Array.isArray(s.custom)) s.custom=[];
+  return s;
+}
+const ls={
+  get(k){try{return localStorage.getItem(KEY+k)}catch(e){return null}},
+  set(k,v){try{v==null?localStorage.removeItem(KEY+k):localStorage.setItem(KEY+k,v)}catch(e){}},
+  json(k){try{return JSON.parse(this.get(k))}catch(e){return null}}
+};
+let S=EMPTY();
+function load(){S=norm(ls.json('')); applyDoc(ls.json('.doc')||DEFAULT_DOC)}
+function save(){ls.set('',J(S)); touch()}
+
+/* ---------- Sync: one JSON file in a private GitHub repo ----------
+   base is the state as last seen on GitHub. Every pull merges three ways (base, this device,
+   GitHub), so edits made on two devices, or offline, are combined instead of overwritten. */
+let GH=ls.json('.gh'), base=norm(ls.json('.base')), remoteDoc=null, sha=null, busy=false, pushT=0, clashes=0;
+function status(t,bad){const el=$('sync-status'); el.textContent=t; el.classList.toggle('bad',!!bad)}
+async function gh(method,body){
+  const r=await fetch('https://api.github.com/repos/'+GH.repo+'/contents/'+GH.path,{method,cache:'no-store',
+    headers:{Authorization:'Bearer '+GH.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},
+    body:body?J(body):undefined});
+  if(!r.ok){const e=new Error('GitHub '+r.status); e.status=r.status; throw e}
+  return r.json();
+}
+const enc=s=>{const b=new TextEncoder().encode(s); let o=''; for(let i=0;i<b.length;i+=8192) o+=String.fromCharCode.apply(null,b.subarray(i,i+8192)); return btoa(o)};
+const dec=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g,'')),c=>c.charCodeAt(0)));
+function mergeMap(b,l,r){
+  const o={};
+  for(const k of new Set(Object.keys(l).concat(Object.keys(r)))){
+    const v=J(l[k])!==J(b[k])?l[k]:r[k];
+    if(v!==undefined) o[k]=v;
+  }
+  return o;
+}
+function merge3(b,l,r){
+  const o={}, byId=a=>Object.fromEntries(a.map(p=>[p.id,p]));
+  for(const k of MAPS) o[k]=mergeMap(b[k],l[k],r[k]);
+  o.custom=Object.values(mergeMap(byId(b.custom),byId(l.custom),byId(r.custom)));
+  return o;
+}
+function fail(e){
+  if(e.status===401) status('GitHub rejected the token. Reconnect under "Sync across devices".',1);
+  else if(e.status===403||e.status===404) status('The token cannot reach '+GH.repo+'. Check its repository access.',1);
+  else if(e.status) status('Sync failed (GitHub '+e.status+'). Changes are saved on this device.',1);
+  else status('Offline. Changes are saved on this device and will sync later.',1);
+  return false;
+}
+async function pull(){
+  if(!GH||busy) return false;
+  busy=true;
+  try{
+    const f=await gh('GET'), d=JSON.parse(dec(f.content));
+    sha=f.sha; remoteDoc=d;
+    const remote=norm(d.state), merged=merge3(base,S,remote);
+    const def=J({config:d.config,seed:d.seed}), redraw=J(merged)!==J(S)||def!==ls.get('.doc');
+    applyDoc(d); ls.set('.doc',def);
+    S=merged; base=remote; ls.set('',J(S)); ls.set('.base',J(base));
+    if(redraw){fillSelects(); render()}
+    busy=false;
+    if(J(S)!==J(base)) push(); else {clashes=0; status('Synced')}
+    return true;
+  }catch(e){busy=false; return fail(e)}
+}
+function touch(){
+  if(!GH) return;
+  status('Saving…'); clearTimeout(pushT); pushT=setTimeout(push,1500);
+}
+async function push(){
+  if(!GH) return;
+  if(busy) return touch();
+  if(!sha) return pull();
+  busy=true; clearTimeout(pushT);
+  const sent=J(S);
+  try{
+    const file=Object.assign({},remoteDoc,{state:JSON.parse(sent)});
+    const r=await gh('PUT',{message:'Update queue',content:enc(J(file,null,1)+'\n'),sha});
+    sha=r.content.sha; base=norm(JSON.parse(sent)); ls.set('.base',sent); busy=false; clashes=0;
+    if(J(S)!==sent) touch(); else status('Synced');
+  }catch(e){
+    busy=false;
+    // 409: the file changed on another device since we read it. Pull merges, then pushes again.
+    if(e.status===409&&++clashes<4) return pull();
+    fail(e);
+  }
+}
+const open=new Set(); let armed=null;
+
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const wkIndex=k=>WEEKS.findIndex(w=>w.k===k);
+function papers(){
+  return SEED.concat(S.custom||[]).filter(p=>!S.rm[p.id]).map(p=>Object.assign({},p,S.ov[p.id]||{}));
+}
+const ordO=p=>S.o[p.id]!=null?S.o[p.id]:p.base;
+const ordP=p=>S.po[p.id]!=null?S.po[p.id]:p.base;
+const stOf=p=>S.st[p.id]||0;
+function linkOf(p){
+  if(p.ax) return 'https://arxiv.org/abs/'+encodeURIComponent(p.ax);
+  if(p.u) return p.u;
+  return 'https://scholar.google.com/scholar?q='+encodeURIComponent(p.t);
+}
+function shelfList(all,k){return all.filter(p=>p.sec===k).sort((a,b)=>ordO(a)-ordO(b))}
+function planList(all){return all.filter(p=>wkIndex(p.wk)>=0).sort((a,b)=>wkIndex(a.wk)-wkIndex(b.wk)||ordP(a)-ordP(b))}
+function visible(p){
+  const q=document.getElementById('q').value.trim().toLowerCase();
+  if(document.getElementById('hide-done').checked&&stOf(p)===2) return false;
+  if(!q) return true;
+  return [p.t,p.a,p.why,S.notes[p.id]].join(' ').toLowerCase().includes(q);
+}
+const view=()=>location.hash==='#plan'?'plan':'priority';
+
+/* ---------- Rendering ---------- */
+const ST=['To read','Reading','Done'];
+function opts(list,sel){return list.map(([v,l])=>`<option value="${esc(v)}"${v===(sel||'')?' selected':''}>${esc(l)}</option>`).join('')}
+const secOpts=()=>[['','Not on a shelf']].concat(SHELVES.map(s=>[s.k,s.n]));
+const srcOpts=()=>Object.entries(SRC);
+const wkOpts=()=>[['','Not in the plan']].concat(WEEKS.map(w=>[w.k,w.n+' · '+w.th]));
+
+function row(p,i,list,mode,num){
+  const st=stOf(p), id=esc(p.id), note=S.notes[p.id]||'';
+  const tags=[];
+  if(p.src&&SRC[p.src]&&!(mode==='plan'&&p.src==='plan')) tags.push(`<span class="tag ${(CFG.hl||[]).includes(p.src)?'hl':''}">${esc(SRC[p.src])}</span>`);
+  if(p.skim) tags.push('<span class="tag plain">Skim</span>');
+  if(mode==='priority'&&wkIndex(p.wk)>=0) tags.push(`<span class="tag plain">Plan: ${esc(WEEKS[wkIndex(p.wk)].n)}</span>`);
+  if(mode==='plan'&&p.sec){const s=SHELVES.find(x=>x.k===p.sec); if(s) tags.push(`<span class="tag plain">${esc(s.n)}</span>`)}
+  const same=(a,b)=>mode==='plan'?a.wk===b.wk:true;
+  const up=i>0&&same(list[i-1],p), down=i<list.length-1&&same(list[i+1],p);
+  const edit=open.has(p.id)?`
+    <div class="edit">
+      <div class="field"><label class="label" for="sec-${id}">Shelf</label><select id="sec-${id}" data-f="sec">${opts(secOpts(),p.sec)}</select></div>
+      <div class="field"><label class="label" for="src-${id}">Why it's here</label><select id="src-${id}" data-f="src">${opts(srcOpts(),p.src)}</select></div>
+      <div class="field"><label class="label" for="wk-${id}">Learning plan slot</label><select id="wk-${id}" data-f="wk">${opts(wkOpts(),p.wk)}</select></div>
+      <div class="field wide"><label class="label" for="note-${id}">Notes</label><textarea id="note-${id}" data-f="note" placeholder="Key idea, limitations, open question">${esc(note)}</textarea></div>
+      <div class="rowbtns"><button class="btn danger" type="button" data-act="rm">${armed===p.id?'Click again to remove':'Remove from queue'}</button></div>
+    </div>`:'';
+  return `<li class="row s${st}${num?' has-num':''}" data-id="${id}">
+    ${num?`<span class="num">${num}</span>`:''}
+    <button class="st" type="button" data-act="cycle" aria-label="Status: ${ST[st]}. Click to change"><span class="dot"></span>${ST[st]}</button>
+    <div class="main">
+      <a class="ttl" href="${esc(linkOf(p))}" target="_blank" rel="noopener">${esc(p.t)}</a>
+      <div class="meta">${esc(p.a||'')}${p.ax?` · <span class="mono">arXiv:${esc(p.ax)}</span>`:(p.u?'':' · <span class="mono">find on Scholar</span>')}</div>
+      ${p.why?`<p class="why">${esc(p.why)}</p>`:''}
+      ${tags.length?`<div class="tags">${tags.join('')}</div>`:''}
+      ${note&&!open.has(p.id)?`<div class="note">${esc(note)}</div>`:''}
+      ${edit}
+    </div>
+    <div class="acts">
+      <button class="ib" type="button" data-act="up" aria-label="Move up"${up?'':' disabled'}>↑</button>
+      <button class="ib" type="button" data-act="down" aria-label="Move down"${down?'':' disabled'}>↓</button>
+      <button class="ib" type="button" data-act="edit" aria-expanded="${open.has(p.id)}">${open.has(p.id)?'Close':'Edit'}</button>
+    </div>
+  </li>`;
+}
+
+function render(){
+  const all=papers(), mode=view();
+  document.getElementById('tab-priority').toggleAttribute('aria-current',false);
+  document.getElementById('tab-plan').toggleAttribute('aria-current',false);
+  document.getElementById('tab-'+mode).setAttribute('aria-current','page');
+
+  const done=all.filter(p=>stOf(p)===2).length, rd=all.filter(p=>stOf(p)===1).length;
+  document.getElementById('tally').textContent=`${all.length} papers · ${rd} reading · ${done} done`;
+
+  const nx=CFG.next||{}, iwNext=(nx.shelves||[]).flatMap(k=>shelfList(all,k)).find(p=>stOf(p)!==2);
+  const plNext=planList(all).find(p=>stOf(p)!==2);
+  const card=(lab,p,sub)=>`<div><span class="label">${lab}</span>${p?`<a href="${esc(linkOf(p))}" target="_blank" rel="noopener">${esc(p.t)}</a><span class="sub">${esc(sub(p))}</span>`:'<span class="sub">Nothing left here.</span>'}</div>`;
+  document.getElementById('next').innerHTML=
+    card(esc(nx.label||'Next up'),iwNext,p=>(SRC[p.src]||'')+(stOf(p)===1?' · reading now':''))+
+    card('Next in the learning plan',plNext,p=>{const w=WEEKS[wkIndex(p.wk)];return w.n+' · '+w.th+(stOf(p)===1?' · reading now':'')});
+
+  let h='';
+  if(mode==='priority'){
+    for(const s of SHELVES){
+      const full=shelfList(all,s.k), list=full.filter(visible), d=full.filter(p=>stOf(p)===2).length;
+      h+=`<section class="shelf" style="margin-bottom:26px"><div class="shead"><h2>${esc(s.n)}</h2><span class="desc">${esc(s.d)}</span><span class="count">${d}/${full.length} read</span></div>
+        ${list.length?`<ol class="list">${list.map((p,i)=>row(p,i,list,mode,0)).join('')}</ol>`:`<p class="empty">${full.length?'Nothing matches the filter.':'Nothing here yet. Add a paper below and pick this shelf.'}</p>`}</section>`;
+    }
+  }else{
+    const full=planList(all), list=full.filter(visible), d=full.filter(p=>stOf(p)===2).length;
+    h+=`<section class="shelf"><div class="shead"><h2>Robotics learning plan</h2><span class="desc">Read top to bottom. Numbers are the reading order.</span><span class="count">${d}/${full.length} read</span></div>`;
+    if(!list.length) h+=`<p class="empty">${full.length?'Nothing matches the filter.':'No papers in the plan yet.'}</p>`;
+    let cur=null, body='';
+    list.forEach((p,i)=>{
+      if(p.wk!==cur){ if(cur!==null) body+='</ol>'; cur=p.wk; const w=WEEKS[wkIndex(p.wk)];
+        body+=`<div class="wkhead"><span class="label">${esc(w.n)}</span><h3>${esc(w.th)}</h3></div><ol class="list">`; }
+      body+=row(p,i,list,mode,full.indexOf(p)+1);
+    });
+    if(cur!==null) body+='</ol>';
+    h+=body+'</section>';
+  }
+  document.getElementById('view').innerHTML=h;
+}
+
+/* ---------- Actions ---------- */
+function setOv(id,f,v){
+  const c=(S.custom||[]).find(p=>p.id===id);
+  if(c) c[f]=v; else (S.ov[id]=S.ov[id]||{})[f]=v;
+}
+function move(id,dir){
+  const all=papers(), mode=view();
+  const p=all.find(x=>x.id===id); if(!p) return;
+  const list=(mode==='plan'?planList(all):shelfList(all,p.sec)).filter(visible);
+  const i=list.findIndex(x=>x.id===id), q=list[i+dir];
+  if(!q||(mode==='plan'&&q.wk!==p.wk)) return;
+  const get=mode==='plan'?ordP:ordO, bag=mode==='plan'?S.po:S.o;
+  const a=get(p), b=get(q); bag[p.id]=b; bag[q.id]=a===b?b+dir*0.5:a;
+}
+document.getElementById('view').addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]'); if(!b) return;
+  const id=b.closest('.row').dataset.id, act=b.dataset.act;
+  if(act==='cycle') S.st[id]=((S.st[id]||0)+1)%3;
+  else if(act==='up') move(id,-1);
+  else if(act==='down') move(id,1);
+  else if(act==='edit'){ open.has(id)?open.delete(id):open.add(id); armed=null; }
+  else if(act==='rm'){
+    if(armed!==id){ armed=id; render(); return; }
+    armed=null; open.delete(id);
+    const n=(S.custom||[]).length; S.custom=(S.custom||[]).filter(p=>p.id!==id);
+    if(S.custom.length===n) S.rm[id]=1;
+  }
+  save(); render();
+});
+document.getElementById('view').addEventListener('change',e=>{
+  const f=e.target.dataset.f; if(!f||f==='note') return;
+  setOv(e.target.closest('.row').dataset.id,f,e.target.value); save(); render();
+});
+document.getElementById('view').addEventListener('input',e=>{
+  if(e.target.dataset.f!=='note') return;
+  const id=e.target.closest('.row').dataset.id;
+  if(e.target.value.trim()) S.notes[id]=e.target.value; else delete S.notes[id];
+  save();
+});
+document.getElementById('q').addEventListener('input',render);
+document.getElementById('hide-done').addEventListener('change',e=>{try{localStorage.setItem(KEY+'.hide',e.target.checked?'1':'')}catch(x){} render()});
+window.addEventListener('hashchange',render);
+
+function fillSelects(){
+  const first=(SHELVES[0]||{}).k||'';
+  $('f-sec').innerHTML=opts(secOpts(),first); $('f-src').innerHTML=opts(srcOpts(),srcFor(first)); $('f-wk').innerHTML=opts(wkOpts(),'');
+  $('qa-sec').innerHTML=opts(secOpts(),first); $('qa-wk').innerHTML=opts(wkOpts(),'');
+}
+document.getElementById('add-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  const v=id=>document.getElementById(id).value.trim();
+  const t=v('f-title'); if(!t) return;
+  const link=v('f-link'), p={id:'u'+Date.now(),t,a:v('f-authors'),why:v('f-why'),sec:v('f-sec'),src:v('f-src'),wk:v('f-wk'),base:Date.now()};
+  const m=link.match(/(\d{4}\.\d{4,5})/);
+  if(m&&(!/^https?:/i.test(link)||/arxiv\.org/i.test(link))) p.ax=m[1]; else if(/^https?:\/\//i.test(link)) p.u=link;
+  (S.custom=S.custom||[]).push(p); save(); e.target.reset();
+  document.getElementById('f-sec').value=p.sec; document.getElementById('f-src').value=p.src;
+  render();
+});
+
+/* ---------- Paste a link: look up title, authors and date ---------- */
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const tidy=s=>String(s||'').replace(/\s+/g,' ').trim();
+function byline(names,date){
+  const last=names.map(n=>tidy(n).split(' ').pop()).filter(Boolean);
+  const who=last.length>3?last[0]+' et al.':last.join(', ');
+  let when='';
+  const m=String(date||'').match(/^(\d{4})(?:-(\d{2}))?/);
+  if(m) when=(m[2]?MON[+m[2]-1]+' ':'')+m[1];
+  return [who,when].filter(Boolean).join(' · ');
+}
+async function getJSON(url){const r=await fetch(url);if(!r.ok)throw 0;return r.json()}
+async function fromS2(key){
+  const d=await getJSON('https://api.semanticscholar.org/graph/v1/paper/'+key+'?fields=title,publicationDate,year,authors,venue');
+  if(!d||!d.title) throw 0;
+  const a=byline((d.authors||[]).map(x=>x.name),d.publicationDate||d.year);
+  return {t:tidy(d.title),a:[a,d.venue].filter(Boolean).join(' · ')};
+}
+async function lookup(link){
+  const isUrl=/^https?:\/\//i.test(link);
+  const ax=(link.match(/(\d{4}\.\d{4,5})(?:v\d+)?/)||[])[1];
+  const doi=(link.match(/10\.\d{4,9}\/[^\s?#]+/)||[])[0];
+  if(ax&&(!isUrl||/arxiv|alphaxiv|huggingface\.co\/papers/i.test(link))){
+    try{
+      const r=await fetch('https://export.arxiv.org/api/query?id_list='+ax);
+      if(r.ok){
+        const e=new DOMParser().parseFromString(await r.text(),'text/xml').querySelector('entry');
+        const t=e&&e.querySelector('title')&&tidy(e.querySelector('title').textContent);
+        if(t&&!/^error/i.test(t)){
+          const pub=e.querySelector('published');
+          return {ax,t,a:byline([...e.querySelectorAll('author > name')].map(n=>n.textContent),pub&&pub.textContent)};
+        }
+      }
+    }catch(x){}
+    try{return Object.assign({ax},await fromS2('arXiv:'+ax))}catch(x){}
+    return {ax};
+  }
+  if(doi){
+    try{
+      const m=(await getJSON('https://api.crossref.org/works/'+encodeURIComponent(doi))).message;
+      const dp=m.issued&&m.issued['date-parts']&&m.issued['date-parts'][0]||[];
+      const date=dp[0]?dp[0]+(dp[1]?'-'+String(dp[1]).padStart(2,'0'):''):'';
+      if(m.title&&m.title[0]) return {u:isUrl?link:'https://doi.org/'+doi,t:tidy(m.title[0]),
+        a:[byline((m.author||[]).map(x=>x.family||x.name||''),date),(m['container-title']||[])[0]].filter(Boolean).join(' · ')};
+    }catch(x){}
+  }
+  if(isUrl){
+    try{return Object.assign({u:link},await fromS2('URL:'+encodeURIComponent(link)))}catch(x){}
+    return {u:link};
+  }
+  return {};
+}
+function srcFor(sec){return (SHELVES.find(s=>s.k===sec)||{}).src||'plan'}
+document.getElementById('qa-form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const el=id=>document.getElementById(id), link=el('qa-link').value.trim(), out=el('qa-msg');
+  if(!link) return;
+  const sec=el('qa-sec').value, wk=el('qa-wk').value;
+  if(!sec&&!wk){out.textContent='Pick a shelf, a plan slot, or both.';return}
+  el('qa-go').disabled=true; out.textContent='Looking up the paper…';
+  const r=await lookup(link);
+  el('qa-go').disabled=false;
+  const dup=r.ax&&papers().find(p=>p.ax===r.ax);
+  if(dup){out.textContent='Already in the queue: '+dup.t;return}
+  if(r.t){
+    (S.custom=S.custom||[]).push({id:'u'+Date.now(),t:r.t,a:r.a||'',ax:r.ax,u:r.u,why:'',sec,src:srcFor(sec),wk,base:Date.now()});
+    save(); render(); el('qa-link').value=''; out.textContent='Added: '+r.t;
+  }else{
+    el('add-panel').open=true; el('f-link').value=link; el('f-sec').value=sec; el('f-src').value=srcFor(sec); el('f-wk').value=wk;
+    el('f-title').focus();
+    out.textContent='Could not look that one up from here. Type the title in the form below and it will keep the link.';
+  }
+});
+
+const msg=t=>{document.getElementById('msg').textContent=t};
+document.getElementById('io-copy').addEventListener('click',()=>{
+  const ta=document.getElementById('io-text'); ta.value=JSON.stringify(S);
+  const fallback=()=>{ta.focus();ta.select();msg('Selected. Copy it with your keyboard.')};
+  try{navigator.clipboard.writeText(ta.value).then(()=>msg('Copied.'),fallback)}catch(x){fallback()}
+});
+document.getElementById('io-load').addEventListener('click',()=>{
+  try{
+    const d=JSON.parse(document.getElementById('io-text').value);
+    if(!d||typeof d!=='object'||Array.isArray(d)) throw 0;
+    S=norm(d);
+    save(); render(); msg('Loaded.');
+  }catch(x){msg('That is not valid queue data. Paste exactly what "Copy my data" gave you.')}
+});
+
+/* ---------- Sync panel ---------- */
+const smsg=t=>{$('gh-msg').textContent=t};
+function syncUI(){
+  $('gh-off').hidden=!GH; $('gh-go').textContent=GH?'Reconnect':'Connect';
+  if(GH) $('gh-repo').value=GH.repo;
+  else if(!$('gh-repo').value&&/\.github\.io$/.test(location.hostname)) $('gh-repo').value=location.hostname.split('.')[0]+'/paper-queue-data';
+}
+$('gh-form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const repo=$('gh-repo').value.trim().replace(/^https?:\/\/github\.com\//i,'').replace(/\/+$/,''), token=$('gh-token').value.trim()||(GH&&GH.token);
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){smsg('Write the repo as username/repo-name.');return}
+  if(!token){smsg('Paste a token first.');return}
+  const prev=GH;
+  GH={token,repo,path:'queue.json'}; sha=null; smsg('Connecting…');
+  if(await pull()){ls.set('.gh',J(GH)); $('gh-token').value=''; smsg('Connected. This browser will stay in sync.')}
+  else{smsg($('sync-status').textContent); GH=prev; if(!GH) status('Not syncing. Saved in this browser only.')}
+  syncUI();
+});
+$('gh-off').addEventListener('click',()=>{
+  clearTimeout(pushT); GH=null; sha=null; remoteDoc=null; base=EMPTY(); S=EMPTY();
+  ['','.gh','.base','.doc'].forEach(k=>ls.set(k,null));
+  applyDoc(DEFAULT_DOC); fillSelects(); render(); syncUI();
+  status('Not syncing. Saved in this browser only.'); smsg('Disconnected. The queue was cleared from this browser; it is still in your data repo.');
+});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden) pull()});
+window.addEventListener('online',()=>pull());
+
+load(); fillSelects(); syncUI();
+try{$('hide-done').checked=!!localStorage.getItem(KEY+'.hide')}catch(x){}
+render();
+if(GH){status('Syncing…'); pull()} else status('Not syncing. Saved in this browser only.');
+</script>
+</body>
+</html>
